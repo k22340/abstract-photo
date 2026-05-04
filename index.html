@@ -2,72 +2,85 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>Hasui Structure Camera</title>
+  <title>Semi-Abstract Photo Mode</title>
   <style>
     body { font-family: sans-serif; padding: 10px; background: #111; color: #eee; }
     #wrap { display: flex; flex-direction: column; gap: 10px; align-items: center; }
     video, canvas { max-width: 100%; border: 1px solid #444; background: #000; }
-    button { padding: 6px 12px; }
+    button { padding: 6px 12px; margin: 0 4px; }
+    #buttons { display: flex; gap: 8px; }
   </style>
 </head>
 <body>
 <div id="wrap">
-  <h2>Hasui Structure Camera（リアルタイム抽象）</h2>
-  <button id="startBtn">カメラ開始</button>
-  <video id="video" autoplay playsinline muted style="display:none;"></video>
+  <h2>Semi-Abstract Photo（原形強め）</h2>
+
+  <div id="buttons">
+    <button id="startBtn">カメラ開始</button>
+    <button id="shotBtn" disabled>シャッター</button>
+  </div>
+
+  <video id="video" autoplay playsinline muted></video>
   <canvas id="canvas"></canvas>
 </div>
 
 <script>
 const startBtn = document.getElementById('startBtn');
-const video = document.getElementById('video');
-const canvas = document.getElementById('canvas');
-const ctx = canvas.getContext('2d');
+const shotBtn  = document.getElementById('shotBtn');
+const video    = document.getElementById('video');
+const canvas   = document.getElementById('canvas');
+const ctx      = canvas.getContext('2d');
 
-let running = false;
+let stream = null;
 
+// カメラ開始
 startBtn.addEventListener('click', async () => {
-  if (running) return;
+  if (stream) return;
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({
+    stream = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: "environment" },
       audio: false
     });
     video.srcObject = stream;
+
     video.addEventListener('loadedmetadata', () => {
-      const maxW = 640;
+      const maxW = 900;
       const scale = Math.min(maxW / video.videoWidth, 1);
-      canvas.width = video.videoWidth * scale;
+      canvas.width  = video.videoWidth * scale;
       canvas.height = video.videoHeight * scale;
-      running = true;
-      loop();
+      shotBtn.disabled = false;
     }, { once: true });
+
   } catch (e) {
     alert('カメラにアクセスできませんでした');
   }
 });
 
-function loop() {
-  if (!running) return;
-  // 元画像をキャンバスに描画
+// シャッター → 抽象化
+shotBtn.addEventListener('click', () => {
+  if (!stream) return;
   ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-  // その上から巴水構造モードで抽象化
   makeAbstract();
-  requestAnimationFrame(loop);
-}
+});
 
+// -----------------------------
+// 原形強め・半抽象モード
+// -----------------------------
 function makeAbstract() {
   const w = canvas.width;
   const h = canvas.height;
   const imgData = ctx.getImageData(0, 0, w, h).data;
 
-  const step = 12;
+  const step = 9; // 原形強め
 
   const points = [];
   for (let y = 0; y <= h; y += step) {
     for (let x = 0; x <= w; x += step) {
+
+      // 揺れを極小にして原形を残す
       let jitterX = x + (Math.random() - 0.5) * step * 0.04;
       let jitterY = y + (Math.random() - 0.5) * step * 0.04;
+
       points.push({
         x: Math.max(0, Math.min(w, jitterX)),
         y: Math.max(0, Math.min(h, jitterY))
@@ -88,112 +101,32 @@ function makeAbstract() {
       const p2 = points[(j + 1) * cols + i];
       const p3 = points[(j + 1) * cols + i + 1];
 
-      const cx = (p0.x + p1.x + p2.x + p3.x) / 4;
-      const cy = (p0.y + p1.y + p2.y + p3.y) / 4;
-
-      // 木ゾーン（左右1/3）→ ▲
-      if (cx < w * 0.33 || cx > w * 0.66) {
-        drawTriangleUp(p0, p1, p2, p3, imgData, w);
-        continue;
-      }
-
-      // 階段ゾーン（中央下）→ 台形
-      if (cy > h * 0.55) {
-        drawTrapezoid(p0, p1, p2, p3, imgData, w);
-        continue;
-      }
-
-      // 建物ゾーン（中央）→ 安定四角形
-      if (cx > w * 0.33 && cx < w * 0.66 && cy > h * 0.3 && cy < h * 0.55) {
-        drawStableQuad(p0, p1, p2, p3, imgData, w);
-        continue;
-      }
-
-      // その他 → 半抽象四角形
       drawQuad(p0, p1, p2, p3, imgData, w);
     }
   }
 }
 
+// 平均色（安定化）
 function getAvgColor(cx, cy, w, imgData) {
   let r = 0, g = 0, b = 0, count = 0;
-  const sample = 10;
+  const sample = 14;
+
   for (let i = 0; i < sample; i++) {
-    const sx = Math.floor(cx + (Math.random() - 0.5) * 12);
-    const sy = Math.floor(cy + (Math.random() - 0.5) * 12);
+    const sx = Math.floor(cx + (Math.random() - 0.5) * 14);
+    const sy = Math.floor(cy + (Math.random() - 0.5) * 14);
     if (sx < 0 || sy < 0 || sx >= w) continue;
+
     const idx = (sy * w + sx) * 4;
     r += imgData[idx];
     g += imgData[idx + 1];
     b += imgData[idx + 2];
     count++;
   }
-  if (!count) return 'rgb(0,0,0)';
+
   return `rgb(${(r / count) | 0}, ${(g / count) | 0}, ${(b / count) | 0})`;
 }
 
-// ▲ 上に尖る三角形（木）
-function drawTriangleUp(p0, p1, p2, p3, imgData, w) {
-  const cx = (p0.x + p1.x + p2.x + p3.x) / 4;
-  const cy = (p0.y + p1.y + p2.y + p3.y) / 4;
-  const color = getAvgColor(cx, cy, w, imgData);
-
-  const topY = Math.min(p0.y, p1.y, p2.y, p3.y);
-  const bottomY = Math.max(p0.y, p1.y, p2.y, p3.y);
-  const leftX = Math.min(p0.x, p2.x);
-  const rightX = Math.max(p1.x, p3.x);
-
-  const top = { x: (leftX + rightX) / 2, y: topY };
-  const left = { x: leftX, y: bottomY };
-  const right = { x: rightX, y: bottomY };
-
-  ctx.fillStyle = color;
-  ctx.beginPath();
-  ctx.moveTo(top.x, top.y);
-  ctx.lineTo(left.x, left.y);
-  ctx.lineTo(right.x, right.y);
-  ctx.closePath();
-  ctx.fill();
-}
-
-// 台形（階段）
-function drawTrapezoid(p0, p1, p2, p3, imgData, w) {
-  const cx = (p0.x + p1.x + p2.x + p3.x) / 4;
-  const cy = (p0.y + p1.y + p2.y + p3.y) / 4;
-  const color = getAvgColor(cx, cy, w, imgData);
-
-  const topLeft = { x: p0.x + (p1.x - p0.x) * 0.25, y: p0.y };
-  const topRight = { x: p1.x - (p1.x - p0.x) * 0.25, y: p1.y };
-  const bottomLeft = p2;
-  const bottomRight = p3;
-
-  ctx.fillStyle = color;
-  ctx.beginPath();
-  ctx.moveTo(topLeft.x, topLeft.y);
-  ctx.lineTo(topRight.x, topRight.y);
-  ctx.lineTo(bottomRight.x, bottomRight.y);
-  ctx.lineTo(bottomLeft.x, bottomLeft.y);
-  ctx.closePath();
-  ctx.fill();
-}
-
-// 建物（安定四角形）
-function drawStableQuad(p0, p1, p2, p3, imgData, w) {
-  const cx = (p0.x + p1.x + p2.x + p3.x) / 4;
-  const cy = (p0.y + p1.y + p2.y + p3.y) / 4;
-  const color = getAvgColor(cx, cy, w, imgData);
-
-  ctx.fillStyle = color;
-  ctx.beginPath();
-  ctx.moveTo(p0.x, p0.y);
-  ctx.lineTo(p1.x, p1.y);
-  ctx.lineTo(p3.x, p3.y);
-  ctx.lineTo(p2.x, p2.y);
-  ctx.closePath();
-  ctx.fill();
-}
-
-// 半抽象四角形
+// 四角形（半抽象）
 function drawQuad(p0, p1, p2, p3, imgData, w) {
   const cx = (p0.x + p1.x + p2.x + p3.x) / 4;
   const cy = (p0.y + p1.y + p2.y + p3.y) / 4;
